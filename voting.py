@@ -1,7 +1,11 @@
+import joblib
+import pandas as pd
+
 from login_events import (
     initialize_login_events,
     record_login_event,
     get_recent_activity,
+
 )
 
 
@@ -102,6 +106,7 @@ def register_voter():
 # VOTER LOGIN
 # =====================================
 
+
 def voter_login():
     print("\n--- Voter Login ---")
 
@@ -117,12 +122,57 @@ def voter_login():
             FROM voters
             WHERE voter_id = ?
             """,
-            (voter_id,)
+            (voter_id,),
         ).fetchone()
 
+        # Never log or save the password.
         if result and verify_password(password, result[1]):
+            record_login_event(result[0], True)
             print("Voter login successful!")
+
+            # Advisory ML check; it does not control authentication.
+            try:
+                activity = get_recent_activity(result[0])
+
+                if activity is not None:
+                    saved_data = joblib.load("fraud_model.joblib")
+                    model = saved_data["model"]
+                    features = saved_data["features"]
+
+                    input_data = pd.DataFrame(
+                        [activity], columns=features
+                    )
+                    prediction = int(model.predict(input_data)[0])
+
+                    if prediction == 1:
+                        print(
+                            "ADVISORY: Login activity flagged "
+                            "for admin review."
+                        )
+                    else:
+                        print(
+                            "ML check: Activity was not flagged."
+                        )
+
+                    print(
+                        "This model is experimental and does not "
+                        "prove fraud."
+                    )
+
+            except (FileNotFoundError, KeyError, ValueError) as error:
+                print(
+                    "ML advisory check unavailable; "
+                    "login can continue."
+                )
+                print("Check the model file and feature names.")
+
             return result[0]
+
+        # Use the account ID only if the supplied voter ID exists.
+        if result:
+            record_login_event(result[0], False)
+        else:
+            record_login_event(None, False)
 
         print("Invalid voter ID or password.")
         return None
@@ -277,6 +327,7 @@ def show_menu():
 
 def main():
     create_tables()
+    initialize_login_events()
 
     logged_in_voter = None
     logged_in_admin = None
@@ -320,3 +371,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+     
