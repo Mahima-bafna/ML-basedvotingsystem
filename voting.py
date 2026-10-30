@@ -1,6 +1,6 @@
 import joblib
 import pandas as pd
-
+from admin_login_report import view_login_report
 from login_events import (
     initialize_login_events,
     record_login_event,
@@ -322,7 +322,9 @@ def show_menu():
     print("4. Admin Login")
     print("5. View Election Results (Admin only)")
     print("6. Logout")
+    print("7. View Login Activity Report (Admin Only)")
     print("0. Exit")
+
 
 
 def main():
@@ -352,7 +354,16 @@ def main():
             logged_in_admin = admin_login()
 
         elif choice == "5":
-            view_results(logged_in_admin)
+            if logged_in_admin is None:
+                print("Please log in as an administrator first.")
+            else:
+                view_results(logged_in_admin)
+
+        elif choice == "7":
+            if logged_in_admin is None:
+                print("Please log in as an administrator first.")
+            else:
+                view_login_report()
 
         elif choice == "6":
             logged_in_voter = None
@@ -371,4 +382,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-     
