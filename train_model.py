@@ -6,40 +6,24 @@ from sklearn.model_selection import train_test_split
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.metrics import (
     accuracy_score,
-    confusion_matrix,
-    classification_report
+    classification_report,
+    confusion_matrix
 )
 
-# =====================================
-# 1. LOAD THE DATASET
-# =====================================
-
+# Load dataset
 df = pd.read_csv("fraud_dataset.csv")
 
-print("Dataset loaded successfully!")
-print("Dataset shape:", df.shape)
-
-# =====================================
-# 2. SEPARATE FEATURES AND LABEL
-# =====================================
-
+# Select input features and target
 features = [
     "failed_attempts",
     "attempts_per_minute",
-    "unique_accounts",
     "unusual_hour"
 ]
 
 X = df[features]
 y = df["is_suspicious"]
 
-# X = input information
-# y = expected answer (0 or 1)
-
-# =====================================
-# 3. SPLIT TRAINING AND TEST DATA
-# =====================================
-
+# Split dataset
 X_train, X_test, y_train, y_test = train_test_split(
     X,
     y,
@@ -48,13 +32,7 @@ X_train, X_test, y_train, y_test = train_test_split(
     stratify=y
 )
 
-print("\nTraining records:", len(X_train))
-print("Testing records:", len(X_test))
-
-# =====================================
-# 4. CREATE AND TRAIN THE MODEL
-# =====================================
-
+# Train Random Forest model
 model = RandomForestClassifier(
     n_estimators=100,
     random_state=42,
@@ -63,33 +41,19 @@ model = RandomForestClassifier(
 
 model.fit(X_train, y_train)
 
-print("\nModel training completed!")
-
-# =====================================
-# 5. EVALUATE THE MODEL
-# =====================================
-
+# Evaluate model
 predictions = model.predict(X_test)
 
-print("\nAccuracy:",
-      round(accuracy_score(y_test, predictions), 3))
-
-print("\nConfusion Matrix:")
-print(confusion_matrix(y_test, predictions, labels=[0, 1]))
+print("Model training completed!")
+print("Accuracy:", accuracy_score(y_test, predictions))
 
 print("\nClassification Report:")
-print(classification_report(
-    y_test,
-    predictions,
-    labels=[0, 1],
-    target_names=["Normal", "Suspicious"],
-    zero_division=0
-))
+print(classification_report(y_test, predictions))
 
-# =====================================
-# 6. SAVE THE TRAINED MODEL
-# =====================================
+print("\nConfusion Matrix:")
+print(confusion_matrix(y_test, predictions))
 
+# Save model and feature names
 joblib.dump(
     {
         "model": model,
@@ -98,5 +62,4 @@ joblib.dump(
     "fraud_model.joblib"
 )
 
-print("\nModel saved as fraud_model.joblib")
-print("Lesson 7 completed successfully!")
+print("\nModel saved successfully!")

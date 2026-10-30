@@ -4,10 +4,9 @@ from admin_login_report import view_login_report
 from login_events import (
     initialize_login_events,
     record_login_event,
+    record_ml_assessment,
     get_recent_activity,
-
 )
-
 
 import hashlib
 import secrets
@@ -107,6 +106,7 @@ def register_voter():
 # =====================================
 
 
+
 def voter_login():
     print("\n--- Voter Login ---")
 
@@ -125,60 +125,74 @@ def voter_login():
             (voter_id,),
         ).fetchone()
 
-        # Never log or save the password.
-        if result and verify_password(password, result[1]):
-            record_login_event(result[0], True)
+        # Check the password.
+        login_success = (
+            result is not None
+            and verify_password(password, result[1])
+        )
+
+        # Do not store passwords or raw voter IDs in login events.
+        account_id = result[0] if result else None
+
+        # Save the login event and obtain its database ID.
+        event_id = record_login_event(
+            account_id,
+            login_success
+        )
+
+        if login_success:
             print("Voter login successful!")
+        else:
+            print("Invalid voter ID or password.")
 
-            # Advisory ML check; it does not control authentication.
+        # Run the advisory ML check for known accounts.
+        if account_id is not None:
             try:
-                activity = get_recent_activity(result[0])
+                activity = get_recent_activity(account_id)
 
-                if activity is not None:
-                    saved_data = joblib.load("fraud_model.joblib")
-                    model = saved_data["model"]
-                    features = saved_data["features"]
+                saved_data = joblib.load("fraud_model.joblib")
+                model = saved_data["model"]
+                features = saved_data["features"]
 
-                    input_data = pd.DataFrame(
-                        [activity], columns=features
-                    )
-                    prediction = int(model.predict(input_data)[0])
+                input_data = pd.DataFrame(
+                    [activity],
+                    columns=features
+                )
 
-                    if prediction == 1:
-                        print(
-                            "ADVISORY: Login activity flagged "
-                            "for admin review."
-                        )
-                    else:
-                        print(
-                            "ML check: Activity was not flagged."
-                        )
+                prediction = int(model.predict(input_data)[0])
 
+                # Save the prediction against this login event.
+                record_ml_assessment(event_id, prediction)
+
+                if prediction == 1:
                     print(
-                        "This model is experimental and does not "
-                        "prove fraud."
+                        "ADVISORY: Login activity flagged "
+                        "for admin review."
                     )
+                else:
+                    print("ML check: Activity was not flagged.")
 
-            except (FileNotFoundError, KeyError, ValueError) as error:
+                print(
+                    "This model is experimental and does "
+                    "not prove fraud."
+                )
+
+            except Exception as error:
                 print(
                     "ML advisory check unavailable; "
-                    "login can continue."
+                    "login result is unchanged."
                 )
-                print("Check the model file and feature names.")
+                print("Reason:", error)
 
-            return result[0]
+        if login_success:
+            return account_id
 
-        # Use the account ID only if the supplied voter ID exists.
-        if result:
-            record_login_event(result[0], False)
-        else:
-            record_login_event(None, False)
-
-        print("Invalid voter ID or password.")
         return None
 
     finally:
         connection.close()
+
+
 
 
 # =====================================

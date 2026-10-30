@@ -23,6 +23,19 @@ def initialize_login_events():
             CREATE INDEX IF NOT EXISTS idx_login_events_voter_time
             ON login_events (voter_id, event_time)
         """)
+        
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS login_assessments (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                event_id INTEGER NOT NULL UNIQUE,
+                prediction INTEGER NOT NULL
+                    CHECK (prediction IN (0, 1)),
+                assessed_at TEXT NOT NULL,
+                FOREIGN KEY (event_id)
+                    REFERENCES login_events(id)
+            )
+        """)
+
 
         conn.commit()
     finally:
@@ -53,15 +66,49 @@ def record_login_event(voter_id, success):
             ),
         )
         conn.commit()
+        event_id = conn.execute(
+            "SELECT last_insert_rowid()"
+        ).fetchone()[0]
+
+        return event_id
+
     finally:
         conn.close()
 
 
+def record_ml_assessment(event_id, prediction):
+    """Save the ML prediction for a login event."""
+
+    if prediction not in (0, 1):
+        raise ValueError("prediction must be 0 or 1")
+
+    timestamp = datetime.now(timezone.utc).isoformat()
+
+    conn = connect_db()
+
+    try:
+        conn.execute(
+            """
+            INSERT OR REPLACE INTO login_assessments
+            (event_id, prediction, assessed_at)
+            VALUES (?, ?, ?)
+            """,
+            (event_id, prediction, timestamp),
+        )
+
+        conn.commit()
+
+    finally:
+        conn.close()                
+
+
+
 def get_recent_activity(voter_id):
     """
-    Build recent activity features for a known account.
-    Uses a 15-minute window and counts attempts in the last minute.
+    Calculate login activity for a known voter.
+    Uses a 15-minute window and a 1-minute window.
     """
+
     if voter_id is None:
         return None
 
@@ -82,15 +129,21 @@ def get_recent_activity(voter_id):
         conn.close()
 
     now = datetime.now(timezone.utc)
+
     recent_15 = []
     recent_1 = []
 
     for success, event_time in rows:
         try:
             event_time = datetime.fromisoformat(event_time)
+
             if event_time.tzinfo is None:
-                event_time = event_time.replace(tzinfo=timezone.utc)
+                event_time = event_time.replace(
+                    tzinfo=timezone.utc
+                )
+
             event_time = event_time.astimezone(timezone.utc)
+
         except (TypeError, ValueError):
             continue
 
@@ -108,18 +161,13 @@ def get_recent_activity(voter_id):
 
     attempts_per_minute = len(recent_1)
 
-    # This CLI has no trustworthy way to determine how many
-    # distinct accounts one person controls.
-    # Keep this at 1 and treat the feature as unavailable.
-    unique_accounts = 1
-
-    # Use UTC as a consistent clock for this prototype.
     hour = now.hour
     unusual_hour = int(hour < 6 or hour >= 22)
 
     return {
         "failed_attempts": min(failed_attempts, 12),
-        "attempts_per_minute": max(1, min(attempts_per_minute, 20)),
-        "unique_accounts": unique_accounts,
+        "attempts_per_minute": max(
+            1, min(attempts_per_minute, 20)
+        ),
         "unusual_hour": unusual_hour,
     }
